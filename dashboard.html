@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Trending Analytics Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        header h1 {
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .last-updated {
+            font-size: 14px;
+            opacity: 0.9;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        @media (max-width: 480px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            header h1 {
+                font-size: 22px;
+            }
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+            transition: box-shadow 0.2s;
+        }
+        .card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .card h2 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #444;
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+        .placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 300px;
+            color: #999;
+            font-size: 14px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 2px dashed #e0e0e0;
+        }
+        .summary-section {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+            margin-bottom: 20px;
+        }
+        .summary-section h2 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #444;
+        }
+        .summary-list {
+            list-style: none;
+        }
+        .summary-list li {
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        .summary-list li:last-child {
+            border-bottom: none;
+        }
+        .summary-list li::before {
+            content: "•";
+            color: #667eea;
+            font-weight: bold;
+            font-size: 20px;
+            line-height: 1;
+        }
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>YouTube Trending Analytics Dashboard</h1>
+            <div class="last-updated">
+                <span>Last updated: <span id="lastUpdated">Loading...</span></span>
+                <span class="loading" id="loadingIndicator"></span>
+            </div>
+        </header>
+
+        <div id="summarySection" class="summary-section" style="display: none;">
+            <h2>Executive Summary</h2>
+            <ul class="summary-list" id="summaryList"></ul>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h2>Top 10 Fastest-Growing Topics</h2>
+                <div class="chart-container">
+                    <canvas id="topicsChart"></canvas>
+                    <div id="topicsPlaceholder" class="placeholder" style="display: none;">No data yet</div>
+                </div>
+            </div>
+            <div class="card">
+                <h2>Engagement Timeseries (7 Days)</h2>
+                <div class="chart-container">
+                    <canvas id="timeseriesChart"></canvas>
+                    <div id="timeseriesPlaceholder" class="placeholder" style="display: none;">No data yet</div>
+                </div>
+            </div>
+            <div class="card">
+                <h2>Top 10 Emerging Hashtags</h2>
+                <div class="chart-container">
+                    <canvas id="hashtagsChart"></canvas>
+                    <div id="hashtagsPlaceholder" class="placeholder" style="display: none;">No data yet</div>
+                </div>
+            </div>
+            <div class="card">
+                <h2>Hook Style Distribution</h2>
+                <div class="chart-container">
+                    <canvas id="patternsChart"></canvas>
+                    <div id="patternsPlaceholder" class="placeholder" style="display: none;">No data yet</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SHEET_ID = '1aGxYGnT2ZSZ40LR2-yU-M9O1KFn97YkP0uCxzKYnZ08';
+        const REFRESH_INTERVAL = 30000;
+
+        let charts = {};
+
+        function parseGvizJson(text) {
+            try {
+                const match = text.match(/google\.visualization\.Query\.setResponse\((.*)\);/s);
+                if (!match) return null;
+                return JSON.parse(match[1]);
+            } catch (e) {
+                console.error('Failed to parse gviz JSON:', e);
+                return null;
+            }
+        }
+
+        function extractRows(gvizData) {
+            if (!gvizData || !gvizData.table || !gvizData.table.rows) return [];
+            const cols = gvizData.table.cols || [];
+            const colNames = cols.map((c, i) => c.label || c.id || `col${i}`);
+            return gvizData.table.rows.map(row => {
+                const obj = {};
+                row.c.forEach((cell, i) => {
+                    obj[colNames[i]] = cell ? (cell.v !== undefined ? cell.v : cell.f) : null;
+                });
+                return obj;
+            });
+        }
+
+        async function fetchSheetData(sheetName) {
+            const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheetName)}`;
+            try {
+                const response = await fetch(url);
+                const text = await response.text();
+                const gvizData = parseGvizJson(text);
+                if (!gvizData) return null;
+                return extractRows(gvizData);
+            } catch (e) {
+                console.error(`Error fetching ${sheetName}:`, e);
+                return null;
+            }
+        }
+
+        function destroyChart(chartId) {
+            if (charts[chartId]) {
+                charts[chartId].destroy();
+                delete charts[chartId];
+            }
+        }
+
+        function showPlaceholder(id, show) {
+            document.getElementById(id).style.display = show ? 'flex' : 'none';
+            const canvas = document.getElementById(id.replace('Placeholder', 'Chart'));
+            if (canvas) canvas.style.display = show ? 'none' : 'block';
+        }
+
+        function renderTopicsChart(data) {
+            const ctx = document.getElementById('topicsChart').getContext('2d');
+            destroyChart('topics');
+            
+            if (!data || data.length === 0) {
+                showPlaceholder('topicsPlaceholder', true);
+                return;
+            }
+            showPlaceholder('topicsPlaceholder', false);
+
+            const sorted = data.sort((a, b) => (b.velocity_pct || 0) - (a.velocity_pct || 0)).slice(0, 10);
+            const labels = sorted.map(r => r.topic || 'Unknown');
+            const values = sorted.map(r => parseFloat(r.velocity
